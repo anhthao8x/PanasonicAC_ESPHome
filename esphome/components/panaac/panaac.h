@@ -19,6 +19,7 @@
 #include "definitions.h"
 #include "extra.h"
 #include <cinttypes>
+#include "esphome/core/preferences.h"
 
 namespace esphome
 {
@@ -54,6 +55,7 @@ namespace esphome
 
             void update_state();
             void transmit_data();
+            void save_state();
 
             ClimateState ac_state;
             bool swing_horizontal_;
@@ -76,6 +78,8 @@ namespace esphome
             PanaACFanLevel *fanlevel_{nullptr};
             PanaACSwingV *swingv_{nullptr};
             PanaACSwingH *swingh_{nullptr};
+
+            ESPPreferenceObject pref_;
         };
 
 

@@ -1,0 +1,151 @@
+esphome:
+  name: "panasonic-ac"
+  friendly_name: "Panasonic AC"
+  min_version: 2025.9.0
+  name_add_mac_suffix: false
+  project: 
+    name: "AnhThao.Panasonic_Remote"
+    version: "D1mini_V4.0"
+
+external_components:
+  - source: components # https://github.com/hoangminh1109/PanaAC_ESPHome/tree/main
+
+esp8266:
+  board: d1_mini # LOLIN D1Mini V4.0
+
+# Enable logging
+logger:
+  level: INFO
+  
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+# Allow Over-The-Air updates
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  fast_connect: true
+  #use_address: 192.168.1.72 # Chỉ định flash/ota cho thiết bị có ip đó
+  
+  # Fallback AP used when Wi-Fi connection fails
+  ap:
+    ssid: "Panasonic-AC"
+    password: !secret ap_password
+
+# Enables captive portal web interface if using fallback AP
+captive_portal:
+
+# --- SCRIPT NHÁY ĐÈN ---
+script:
+  - id: flash_led
+    mode: restart
+    then:
+      - repeat:
+          count: 2 # Số lần led nháy
+          then:
+            - output.turn_on: status_led_output
+            - delay: 50ms
+            - output.turn_off: status_led_output
+            - delay: 50ms # Khoảng nghỉ giữa các lần nháy
+
+# --- LED OUTPUT ---
+output:
+  - platform: gpio
+    pin: 
+      number: GPIO2
+      inverted: true
+    id: status_led_output
+
+# --- INFRARED RECEIVER ---
+remote_receiver:
+  pin:
+      number: GPIO4
+      inverted: true
+      mode: OUTPUT_OPEN_DRAIN
+      allow_other_uses: true
+  tolerance: 55%
+  id: ir_receiver
+  buffer_size: 2kb
+  idle: 15ms # required (>10ms frame gap để nhận cả 2 frame liền)
+
+# --- INFRARED TRANSMITTER ---
+remote_transmitter:
+  carrier_duty_percent: 50%
+  pin:
+      number: GPIO4
+      inverted: true
+      mode: OUTPUT_OPEN_DRAIN
+      allow_other_uses: true
+  # Nháy đèn khi phát từ Hass
+  on_transmit:
+    then:
+      - script.execute: flash_led
+
+# --- CLIMATE ---
+climate:
+  - platform: panaac
+    name: ""
+    receiver_id: ir_receiver
+    supports_fan_only: false
+    supports_heat: false
+    supports_quiet: true
+    swing_horizontal: false
+    fan_5level: true
+    ir_control: false
+    
+    # Hiển thị cảm biến phòng hiện tại
+    sensor: nhiet_do
+    humidity_sensor: do_am
+    # Nháy đèn khi trạng thái thay đổi (Đồng bộ 2 chiều)
+    on_state:
+      then:
+        - script.execute: flash_led
+        
+# --- Sensor Temperature & Humidity ---
+sensor:
+  - platform: homeassistant
+    name: "Nhiệt độ"
+    id: nhiet_do
+    entity_id: sensor.atc4_temperature # Thay Sensor nhiệt độ phòng hiện tại
+    internal: true
+
+  - platform: homeassistant
+    name: "Độ ẩm"
+    id: do_am
+    entity_id: sensor.atc4_humidity # Thay Sensor độ ẩm phòng hiện tại
+    internal: true
+
+  - platform: uptime
+    name: "Uptime"
+    update_interval: 60s
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    update_interval: 60s
+    disabled_by_default: true
+    
+# --- Restart ESP12E ---
+switch:
+  - platform: restart
+    name: "ESP Reboot"
+
+# --- IP Address ---
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP"
+      entity_category: "diagnostic"
+      disabled_by_default: False
+      icon: mdi:ip-network
+
+# --- Status Connected ---
+binary_sensor:
+  - platform: status
+    name: "Status"
+    id: ink_ha_connected

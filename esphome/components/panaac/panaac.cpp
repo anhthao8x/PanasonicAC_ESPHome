@@ -25,16 +25,29 @@ namespace esphome
         {
             ClimateIR::setup();
 
-            // state
-            ac_state.mode = climate::CLIMATE_MODE_OFF;
-            ac_state.temp = 26.0;
-            ac_state.fan_mode = climate::CLIMATE_FAN_AUTO;
-            ac_state.fan_level = PANAAC_FAN_AUTO;
-            ac_state.swing_mode = climate::CLIMATE_SWING_VERTICAL;
-            ac_state.swing_v_pos = PANAAC_SWINGV_AUTO;
-            ac_state.swing_h_pos = PANAAC_SWINGH_AUTO;
-            ac_state.last_swing_v_pos = PANAAC_SWINGV_MIDDLE;
-            ac_state.last_swing_h_pos = PANAAC_SWINGH_MIDDLE;
+            // Tạo preference object để lưu/đọc trạng thái từ flash
+            this->pref_ = global_preferences->make_preference<ClimateState>(this->get_object_id_hash());
+
+            // Thử khôi phục trạng thái từ flash
+            if (!this->pref_.load(&this->ac_state))
+            {
+                // Lần đầu tiên hoặc flash chưa có dữ liệu: dùng giá trị mặc định
+                ESP_LOGI(TAG, "No saved state found, using defaults");
+                ac_state.mode = climate::CLIMATE_MODE_OFF;
+                ac_state.temp = 26.0;
+                ac_state.fan_mode = climate::CLIMATE_FAN_AUTO;
+                ac_state.fan_level = PANAAC_FAN_AUTO;
+                ac_state.swing_mode = climate::CLIMATE_SWING_VERTICAL;
+                ac_state.swing_v_pos = PANAAC_SWINGV_AUTO;
+                ac_state.swing_h_pos = PANAAC_SWINGH_AUTO;
+                ac_state.last_swing_v_pos = PANAAC_SWINGV_MIDDLE;
+                ac_state.last_swing_h_pos = PANAAC_SWINGH_MIDDLE;
+            }
+            else
+            {
+                ESP_LOGI(TAG, "Restored saved state: mode=%d, temp=%.1f, fan=%d, swing=%d",
+                         ac_state.mode, ac_state.temp, ac_state.fan_mode, ac_state.swing_mode);
+            }
 
             // fan level options
             FixedVector<const char *> fanlevel_options;
@@ -72,20 +85,20 @@ namespace esphome
                 this->swingh_->traits.set_options({STR_SWINGH_AUTO, STR_SWINGH_LEFTMAX, STR_SWINGH_LEFT, STR_SWINGH_MIDDLE, STR_SWINGH_RIGHT, STR_SWINGH_RIGHTMAX});
             }
 
-            // initial state
-            this->mode = climate::CLIMATE_MODE_OFF;
-            this->target_temperature = 26.0;
-            this->fan_mode = climate::CLIMATE_FAN_AUTO;
+            // Khôi phục trạng thái từ ac_state (KHÔNG phát IR)
+            this->mode = ac_state.mode;
+            this->target_temperature = ac_state.temp;
+            this->fan_mode = ac_state.fan_mode;
+            this->swing_mode = ac_state.swing_mode;
+            this->publish_state();
+
+            // Khôi phục trạng thái cho các select (Fan Level, Swing V, Swing H)
+            this->fanlevel_->set_fanlevel(ac_state.fan_level);
+            this->swingv_->set_swingvpos(ac_state.swing_v_pos);
             if (this->swing_horizontal_)
             {
-                this->swing_mode = climate::CLIMATE_SWING_BOTH;
+                this->swingh_->set_swinghpos(ac_state.swing_h_pos);
             }
-            else
-            {
-                this->swing_mode = climate::CLIMATE_SWING_VERTICAL;
-            }
-
-            transmit_state();
 
         }
 
@@ -99,6 +112,10 @@ namespace esphome
             else
             {
                 traits.clear_feature_flags(climate::ClimateFeature::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
+            }
+            if (this->humidity_sensor_ != nullptr)
+            {
+                traits.add_feature_flags(climate::ClimateFeature::CLIMATE_SUPPORTS_CURRENT_HUMIDITY);
             }
             traits.clear_feature_flags(climate::ClimateFeature::CLIMATE_SUPPORTS_ACTION);
             traits.set_visual_min_temperature(PANAAC_TEMP_MIN);
@@ -418,6 +435,8 @@ namespace esphome
             {
                 this->swingh_->set_swinghpos(ac_state.swing_h_pos);
             }
+
+            this->save_state();
             
             return true;
         }
@@ -716,6 +735,8 @@ namespace esphome
             {
                 this->swingh_->set_swinghpos(ac_state.swing_h_pos);
             }
+
+            this->save_state();
         }
 
         void PanaACClimate::update_state()
@@ -737,6 +758,14 @@ namespace esphome
 
             this->publish_state();
 
+            this->save_state();
+
+        }
+
+        void PanaACClimate::save_state()
+        {
+            this->pref_.save(&this->ac_state);
+            ESP_LOGD(TAG, "State saved to flash");
         }
 
     } // namespace panaac
